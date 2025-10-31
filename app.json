@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "RAG Mobile",
+    "slug": "rag-mobile",
+    "scheme": "ragmobile",
+    "plugins": [],
+    "extra": {
+      "OPENAI_API_KEY": "YOUR_DEV_KEY_ONLY",
+      "SENTRY_DSN": "https://YOUR_SENTRY_DSN_HERE.ingest.sentry.io/12345"
+    }
+  }
+}
