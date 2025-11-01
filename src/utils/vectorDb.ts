@@ -52,6 +52,7 @@ export function listDocuments(): DocumentRow[] {
 export function deleteDocument(documentId: string) {
   db.runSync("DELETE FROM chunks WHERE documentId = ?", documentId);
   db.runSync("DELETE FROM documents WHERE id = ?", documentId);
+  clearEmbeddingCache(); // Clear cache after deletion
 }
 
 // Optional helper if you need document metadata on demand
@@ -60,31 +61,74 @@ export function getDocumentById(id: string): DocumentRow | undefined {
   return r ?? undefined;
 }
 
-// Top-k search with optional document-type filter
+// Embedding cache to avoid repeated JSON.parse operations
+const embeddingCache = new Map<string, number[]>();
+
+function getCachedEmbedding(embeddingJson: string): number[] {
+  if (embeddingCache.has(embeddingJson)) {
+    return embeddingCache.get(embeddingJson)!;
+  }
+  const embedding = JSON.parse(embeddingJson) as number[];
+  embeddingCache.set(embeddingJson, embedding);
+  return embedding;
+}
+
+// Clear cache when database changes (call after document operations)
+export function clearEmbeddingCache() {
+  embeddingCache.clear();
+}
+
+// Top-k search with optional document-type filter and performance optimizations
 export async function retrieveTopK(
   query: string,
   k = 3,
-  opts?: { docType?: DocType }
+  opts?: {
+    docType?: DocType;
+    maxChunks?: number; // Limit total chunks to process for large libraries
+    dateRange?: { start?: number; end?: number }; // Filter by document date
+  }
 ) {
   const qEmbed = await embedText(query);
 
-  let rows: any[];
+  let baseQuery = `
+    SELECT chunks.id, chunks.content, chunks.embedding, chunks.documentId, documents.date
+    FROM chunks
+    JOIN documents ON documents.id = chunks.documentId
+  `;
+  const params: any[] = [];
+  const conditions: string[] = [];
+
   if (opts?.docType) {
-    rows = db.getAllSync<any>(
-      `SELECT chunks.id, chunks.content, chunks.embedding, chunks.documentId
-       FROM chunks
-       JOIN documents ON documents.id = chunks.documentId
-       WHERE documents.type = ?`,
-      opts.docType
-    );
+    conditions.push("documents.type = ?");
+    params.push(opts.docType);
+  }
+
+  if (opts?.dateRange?.start) {
+    conditions.push("documents.date >= ?");
+    params.push(opts.dateRange.start);
+  }
+
+  if (opts?.dateRange?.end) {
+    conditions.push("documents.date <= ?");
+    params.push(opts.dateRange.end);
+  }
+
+  if (conditions.length > 0) {
+    baseQuery += " WHERE " + conditions.join(" AND ");
+  }
+
+  // Add ORDER BY documents.date DESC for more recent-first processing
+  baseQuery += " ORDER BY documents.date DESC";
+
+  let rows: any[];
+  if (opts?.maxChunks) {
+    rows = db.getAllSync<any>(baseQuery + " LIMIT ?", ...params, opts.maxChunks);
   } else {
-    rows = db.getAllSync<any>(
-      "SELECT id, content, embedding, documentId FROM chunks"
-    );
+    rows = db.getAllSync<any>(baseQuery, ...params);
   }
 
   const scored = rows.map((r) => {
-    const emb = JSON.parse(r.embedding) as number[];
+    const emb = getCachedEmbedding(r.embedding);
     return { ...r, score: cosine(qEmbed, emb) };
   }).sort((a, b) => b.score - a.score);
 
@@ -92,5 +136,5 @@ export async function retrieveTopK(
 }
 
 export function chunksForDocument(documentId: string) {
-  return db.getAllSync<any>("SELECT * FROM chunks WHERE documentId = ?", documentId);
+  return db.getAllSync<any>("SELECT * FROM chunks WHERE documentId = ? ORDER BY rowid ASC", documentId);
 }

@@ -3,6 +3,9 @@ module.exports = function(api) {
   api.cache(() => (isTest ? "test" : "default"));
   return {
     presets: ["babel-preset-expo"],
-    plugins: isTest ? [] : ["nativewind/babel"],
+    plugins: isTest ? [] : [
+      "nativewind/babel",
+      "react-native-reanimated/plugin" // must be last
+    ],
   };
 };

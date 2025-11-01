@@ -15,6 +15,7 @@ import DocumentViewer from "./src/screens/DocumentViewer";
 import SearchScreen from "./src/screens/SearchScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import { View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { initDb } from "./src/utils/vectorDb";
 
 const Stack = createStackNavigator();
@@ -36,14 +37,19 @@ export default function App() {
 
   return (
     <NavigationContainer theme={{ dark: true, colors: { background: "#0b1020", primary: "#06B6D4", text: "#fff", card: "#0b1020", border: "#1f2937", notification: "#06B6D4" } as any }}>
-      <View className="flex-1 bg-gradient-to-b from-[#581C87] to-[#1E3A8A]">
+      <LinearGradient
+        colors={["#581C87", "#1E3A8A"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={{ flex: 1 }}
+      >
         <Tabs.Navigator screenOptions={{ headerShown: false, tabBarStyle: { backgroundColor: "#0b1020", borderTopColor: "#1f2937" }, tabBarActiveTintColor: "#06B6D4" }}>
           <Tabs.Screen name="Chat" component={ChatScreen} />
           <Tabs.Screen name="Documents" component={DocumentsStack} />
           <Tabs.Screen name="Search" component={SearchScreen} />
           <Tabs.Screen name="Settings" component={SettingsScreen} />
         </Tabs.Navigator>
-      </View>
+      </LinearGradient>
     </NavigationContainer>
   );
 }

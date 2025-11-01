@@ -4,7 +4,7 @@ import * as ImagePicker from "expo-image-picker";
 import { toByteArray } from "base64-js";
 import { ocrImageBase64 } from "../api/chat-service";
 import { embedText } from "../api/embeddings";
-import { insertChunk, insertDocument, updateDocumentChunkCount } from "./vectorDb";
+import { insertChunk, insertDocument, updateDocumentChunkCount, clearEmbeddingCache } from "./vectorDb";
 import { randomUUID } from "./uuid";
 
 const EMBEDDING_DELAY_MS = 150; // base pacing between calls
@@ -24,8 +24,9 @@ async function embedWithBackoff(text: string) {
     } catch (e: any) {
       lastErr = e;
       const msg = String(e?.message ?? "");
-      const isRate = msg.includes("429");
-      const isServer = / 5\d\d /.test(msg) || msg.includes(" 500") || msg.includes(" 503");
+      const status = Number(/\b([45]\d{2})\b/.exec(msg)?.[1] ?? 0);
+      const isRate = status === 429 || /rate limit/i.test(msg);
+      const isServer = status >= 500 && status < 600;
       if (!(isRate || isServer) || attempt === MAX_RETRIES) break;
       const backoff = Math.min(1500, 200 * Math.pow(2, attempt)); // 200ms, 400ms, 800ms, 1600ms
       await sleep(backoff + Math.random() * 120);
@@ -92,17 +93,71 @@ export async function processPdfToText(uri: string): Promise<string> {
   return out.join("\n\n");
 }
 
-// Chunking (500 chars with 50 overlap)
-export function chunkText(input: string, size = 500, overlap = 50) {
+// Sentence-aware chunking for better coherence
+export function chunkText(input: string, targetSize = 500, overlap = 50) {
+  // Split text into sentences using common sentence terminators
+  const sentences = input.match(/[^.!?]+[.!?]+[\s"')\]}]*|[^.!?]+$/g) || [input];
+
   const chunks: string[] = [];
-  let i = 0;
-  while (i < input.length) {
-    const end = Math.min(i + size, input.length);
-    chunks.push(input.slice(i, end));
-    if (end === input.length) break;
-    i = end - overlap;
+  let currentChunk = "";
+  let currentIndex = 0;
+
+  while (currentIndex < sentences.length) {
+    const sentence = sentences[currentIndex].trim();
+    const testChunk = currentChunk + (currentChunk ? " " : "") + sentence;
+
+    // If adding this sentence doesn't exceed target size significantly, add it
+    if (testChunk.length <= targetSize * 1.2) { // Allow 20% overflow for sentence completeness
+      currentChunk = testChunk;
+      currentIndex++;
+    } else {
+      // If current chunk is substantial, save it and start a new one
+      if (currentChunk.length >= targetSize * 0.6) {
+        chunks.push(currentChunk.trim());
+        currentChunk = "";
+      } else {
+        // For very short chunks, force add the sentence to avoid tiny chunks
+        currentChunk = testChunk;
+        currentIndex++;
+      }
+    }
+
+    // If we've reached the target size and have more content, start new chunk
+    if (currentChunk.length >= targetSize && currentIndex < sentences.length) {
+      chunks.push(currentChunk.trim());
+      currentChunk = "";
+    }
   }
-  return chunks;
+
+  // Don't forget the last chunk
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim());
+  }
+
+  // Handle overlap by merging content between adjacent chunks
+  if (overlap > 0 && chunks.length > 1) {
+    const overlappedChunks: string[] = [];
+
+    for (let i = 0; i < chunks.length; i++) {
+      let chunk = chunks[i];
+
+      // Add overlap from previous chunk
+      if (i > 0) {
+        const prevChunk = chunks[i - 1];
+        const words = prevChunk.split(/\s+/);
+        const overlapWords = Math.min(overlap, words.length);
+        const overlapText = words.slice(-overlapWords).join(" ");
+        chunk = overlapText + " " + chunk;
+      }
+
+      overlappedChunks.push(chunk);
+    }
+
+    return overlappedChunks;
+  }
+
+  // If no overlap or single chunk, return as-is
+  return chunks.length > 0 ? chunks : [input];
 }
 
 // Full pipeline: produce embeddings & persist
@@ -136,5 +191,6 @@ export async function ingestDocument(params: {
   }
 
   updateDocumentChunkCount(docId, count);
+  clearEmbeddingCache(); // Clear cache after adding new document
   return { id: docId, chunkCount: count };
 }
