@@ -45,13 +45,14 @@ export const useChatStore = create<ChatState>()(
 
         try {
           const top = await retrieveTopK(text, 3);
-          const ctx = top.map((t, i) => `(${(t.score).toFixed(3)}) [${t.documentId}] ${t.content}`);
+          const ctx = top.map((t) => `(${(t.score).toFixed(3)}) [${t.documentId}] ${t.content}`);
           const answer = await chatWithRag(text, ctx);
           const aiMsg: ChatMessage = { id: randomUUID(), role: "assistant", content: answer, createdAt: Date.now(), threadId };
           set({ messages: { ...get().messages, [threadId]: [...(get().messages[threadId]||[]), aiMsg] } });
-        } catch (e: any) {
-          reportError(e, { where: "chat.send" });
-          set({ error: e?.message ?? "Chat failed." });
+        } catch (err: unknown) {
+          reportError(err, { where: "chat.send" });
+          const message = err instanceof Error ? err.message : "Chat failed.";
+          set({ error: message });
         } finally {
           set({ typing: false });
         }

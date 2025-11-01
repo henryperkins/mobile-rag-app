@@ -4,26 +4,97 @@ import * as ImagePicker from "expo-image-picker";
 import { toByteArray } from "base64-js";
 import { ocrImageBase64 } from "../api/chat-service";
 import { embedText } from "../api/embeddings";
-import { insertChunk, insertDocument, updateDocumentChunkCount, clearEmbeddingCache } from "./vectorDb";
+import { insertChunk, insertDocument, updateDocumentChunkCount, clearEmbeddingCache, upsertDocCentroid } from "./vectorDb";
 import { randomUUID } from "./uuid";
+import type { DocumentPickerAsset } from "expo-document-picker";
+import type { ImagePickerAsset } from "expo-image-picker";
+import type { TextItem } from "pdfjs-dist/types/src/display/api";
+import { loadPdf } from "./pdfLoader";
 
 const EMBEDDING_DELAY_MS = 150; // base pacing between calls
 const MAX_RETRIES = 4;
 
-function sleep(ms: number) { return new Promise(res => setTimeout(res, ms)); }
+// Security constraints
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB limit
+const MAX_TEXT_LENGTH = 10 * 1024 * 1024; // 10MB text processing limit
+const ALLOWED_MIME_TYPES = {
+  text: ["text/plain", "text/markdown", "text/*"],
+  pdf: ["application/pdf"],
+  image: ["image/jpeg", "image/png", "image/gif", "image/webp"]
+};
+
+type SupportedAsset = DocumentPickerAsset | ImagePickerAsset;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getAssetSize(asset: SupportedAsset): number | undefined {
+  if ("size" in asset && typeof asset.size === "number") return asset.size;
+  if ("fileSize" in asset && typeof asset.fileSize === "number") return asset.fileSize;
+  return undefined;
+}
+
+function getAssetMimeType(asset: SupportedAsset): string | undefined {
+  if ("mimeType" in asset && typeof asset.mimeType === "string") return asset.mimeType;
+  return undefined;
+}
+
+function getAssetType(asset: SupportedAsset): string | undefined {
+  if ("type" in asset && typeof asset.type === "string") return asset.type;
+  return undefined;
+}
+
+function validateFileAsset(asset: SupportedAsset | null | undefined, expectedType: "text" | "pdf" | "image") {
+  if (!asset) throw new Error("No file selected");
+
+  const size = getAssetSize(asset);
+  if (typeof size === "number" && size > MAX_FILE_SIZE) {
+    throw new Error(`File too large. Maximum size is ${MAX_FILE_SIZE / (1024 * 1024)}MB`);
+  }
+
+  const mimeType = getAssetMimeType(asset);
+  if (mimeType) {
+    const allowedTypes = ALLOWED_MIME_TYPES[expectedType];
+    const isAllowed = allowedTypes.some(type => {
+      if (type.endsWith("/*")) {
+        return mimeType.startsWith(type.slice(0, -1));
+      }
+      return mimeType === type;
+    });
+    if (!isAllowed) {
+      throw new Error(`Invalid file type. Expected ${expectedType} file`);
+    }
+    return;
+  }
+
+  // Fallback for assets without explicit MIME type (e.g., image picker)
+  const assetType = getAssetType(asset);
+  if (expectedType === "image" && assetType === "image") return;
+  // If MIME information is unavailable, allow text/pdf assets through to avoid false negatives.
+  if (expectedType !== "image") return;
+  throw new Error("Unable to determine file type.");
+}
+
+function validateTextLength(text: string) {
+  if (text.length > MAX_TEXT_LENGTH) {
+    throw new Error(`Text too long. Maximum length is ${MAX_TEXT_LENGTH / (1024 * 1024)}MB`);
+  }
+}
 
 async function embedWithBackoff(text: string) {
   let attempt = 0;
-  let lastErr: any;
+  let lastErr: unknown;
   while (attempt <= MAX_RETRIES) {
     try {
       const emb = await embedText(text);
       // light pacing between successful calls
       await sleep(EMBEDDING_DELAY_MS);
       return emb;
-    } catch (e: any) {
-      lastErr = e;
-      const msg = String(e?.message ?? "");
+    } catch (err: unknown) {
+      lastErr = err;
+      const message = err instanceof Error ? err.message : "";
+      const msg = String(message);
       const status = Number(/\b([45]\d{2})\b/.exec(msg)?.[1] ?? 0);
       const isRate = status === 429 || /rate limit/i.test(msg);
       const isServer = status >= 500 && status < 600;
@@ -33,10 +104,11 @@ async function embedWithBackoff(text: string) {
       attempt++;
     }
   }
-  throw lastErr ?? new Error("Embedding failed");
+  if (lastErr instanceof Error) throw lastErr;
+  throw new Error("Embedding failed");
 }
 
-export async function pickAnyDocument() {
+export async function pickAnyDocument(): Promise<DocumentPickerAsset> {
   // Offer docs first; you can add a UI choice for images separately
   const res = await DocumentPicker.getDocumentAsync({
     copyToCacheDirectory: true,
@@ -44,10 +116,20 @@ export async function pickAnyDocument() {
     type: ["application/pdf", "text/plain", "text/markdown", "text/*"]
   });
   if (res.canceled || !res.assets?.length) throw new Error("No document selected.");
-  return res.assets[0]; // { uri, name, size, mimeType }
+
+  const asset = res.assets[0];
+
+  // Validate based on MIME type
+  if (asset.mimeType === "application/pdf") {
+    validateFileAsset(asset, "pdf");
+  } else {
+    validateFileAsset(asset, "text");
+  }
+
+  return asset; // { uri, name, size, mimeType }
 }
 
-export async function pickImageForOcr() {
+export async function pickImageForOcr(): Promise<ImagePickerAsset> {
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (perm.status !== "granted") throw new Error("Permission denied");
   const res = await ImagePicker.launchImageLibraryAsync({
@@ -56,26 +138,29 @@ export async function pickImageForOcr() {
     base64: false
   });
   if (res.canceled || !res.assets?.length) throw new Error("No image selected.");
-  return res.assets[0]; // { uri, fileName, fileSize, ... }
+
+  const asset = res.assets[0];
+  validateFileAsset(asset, "image");
+
+  return asset; // { uri, fileName, fileSize, ... }
 }
 
 export async function processTextFile(uri: string): Promise<string> {
   const txt = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.UTF8 });
+  validateTextLength(txt);
   return txt;
 }
 
 export async function processImageFileToText(uri: string): Promise<string> {
   const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
-  return ocrImageBase64(base64);
+  const text = await ocrImageBase64(base64);
+  validateTextLength(text);
+  return text;
 }
 
 // --- PDF text extraction via pdf.js (works in RN with minimal shims) ---
-async function loadPdf() {
-  // Use legacy build for broader compatibility
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf");
-  // @ts-ignore silence types for worker
-  pdfjs.GlobalWorkerOptions.workerSrc = require("pdfjs-dist/legacy/build/pdf.worker.entry");
-  return pdfjs;
+function isTextItem(item: unknown): item is TextItem {
+  return typeof item === "object" && item !== null && "str" in item && typeof (item as { str?: unknown }).str === "string";
 }
 
 export async function processPdfToText(uri: string): Promise<string> {
@@ -88,13 +173,35 @@ export async function processPdfToText(uri: string): Promise<string> {
   for (let p = 1; p <= pages; p++) {
     const page = await doc.getPage(p);
     const content = await page.getTextContent();
-    out.push(content.items.map((i: any) => i.str).join(" "));
+    const textItems = content.items.filter(isTextItem);
+    out.push(textItems.map((item) => item.str).join(" "));
   }
-  return out.join("\n\n");
+  const text = out.join("\n\n");
+  validateTextLength(text);
+  return text;
 }
 
-// Sentence-aware chunking for better coherence
+// Character-based chunking to match tests/README (500 chars, 50-char overlap)
 export function chunkText(input: string, targetSize = 500, overlap = 50) {
+  if (!input) return [""];
+  if (targetSize <= 0) return [input];
+
+  // Ensure overlap is sane
+  overlap = Math.max(0, Math.min(overlap, targetSize - 1));
+
+  if (input.length <= targetSize) return [input];
+
+  const chunks: string[] = [];
+  const step = targetSize - overlap;
+
+  for (let start = 0; start < input.length; start += step) {
+    chunks.push(input.slice(start, start + targetSize));
+  }
+  return chunks;
+}
+
+// (Optional) Sentence-aware chunking for better coherence - kept for future use
+export function chunkTextSentenceAware(input: string, targetSize = 500, overlap = 50) {
   // Split text into sentences using common sentence terminators
   const sentences = input.match(/[^.!?]+[.!?]+[\s"')\]}]*|[^.!?]+$/g) || [input];
 
@@ -134,14 +241,15 @@ export function chunkText(input: string, targetSize = 500, overlap = 50) {
     chunks.push(currentChunk.trim());
   }
 
-  // Handle overlap by merging content between adjacent chunks
+  // Handle word-based overlap by merging content between adjacent chunks
+  // Note: The overlap parameter refers to number of words (not characters)
   if (overlap > 0 && chunks.length > 1) {
     const overlappedChunks: string[] = [];
 
     for (let i = 0; i < chunks.length; i++) {
       let chunk = chunks[i];
 
-      // Add overlap from previous chunk
+      // Add word overlap from previous chunk
       if (i > 0) {
         const prevChunk = chunks[i - 1];
         const words = prevChunk.split(/\s+/);
@@ -184,13 +292,23 @@ export async function ingestDocument(params: {
 
   // Embed with rate limiting and backoff
   let count = 0;
+  let sum: number[] | null = null;
+
   for (const c of chunks) {
     const embedding = await embedWithBackoff(c);
     insertChunk(randomUUID(), docId, c, embedding);
+    if (!sum) sum = new Array(embedding.length).fill(0);
+    for (let i = 0; i < embedding.length; i++) sum[i] += embedding[i];
     count++;
   }
 
   updateDocumentChunkCount(docId, count);
+
+  if (sum && count > 0) {
+    const centroid = sum.map(v => v / count);
+    upsertDocCentroid(docId, centroid, count);
+  }
+
   clearEmbeddingCache(); // Clear cache after adding new document
   return { id: docId, chunkCount: count };
 }

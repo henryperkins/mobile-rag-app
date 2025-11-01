@@ -6,9 +6,11 @@ import ErrorBanner from "../components/ErrorBanner";
 import SkeletonCard from "../components/SkeletonCard";
 import ConfirmModal from "../components/ConfirmModal";
 import { useNavigation } from "@react-navigation/native";
+import type { StackNavigationProp } from "@react-navigation/stack";
+import type { DocumentsStackParamList } from "../types/navigation";
 
 export default function DocumentsScreen() {
-  const nav = useNavigation<any>();
+  const nav = useNavigation<StackNavigationProp<DocumentsStackParamList, "DocumentsHome">>();
   const { docs, loading, error, refresh, addFromPicker, addImageForOcr, remove, clearError } = useDocumentStore();
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [docToDelete, setDocToDelete] = useState<string | null>(null);

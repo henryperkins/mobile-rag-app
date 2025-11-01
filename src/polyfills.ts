@@ -1,5 +1,19 @@
 // src/polyfills.ts
 // Minimal shims so pdfjs-dist works in RN
 // @ts-ignore
-if (!global.window) (global as any).window = global;
-if (!(global as any).navigator) (global as any).navigator = { userAgent: "react-native" };
+declare global {
+   
+  var window: typeof globalThis;
+   
+  var navigator: { userAgent: string };
+}
+
+const globalObject = globalThis as typeof globalThis & {
+  window?: typeof globalThis;
+  navigator?: { userAgent: string };
+};
+
+if (!globalObject.window) globalObject.window = globalObject;
+if (!globalObject.navigator) globalObject.navigator = { userAgent: "react-native" };
+
+export {};

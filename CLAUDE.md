@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+# **PLEASE LET ME KNOW IF YOU HAVE ANY QUESTIONS BEFORE MAKING A PLAN**
+
 ## Development Commands
 
 - `npm start` - Start Expo development server

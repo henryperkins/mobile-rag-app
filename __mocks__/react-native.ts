@@ -1,5 +1,5 @@
 export const Linking = {
-  openURL: async (_url: string) => true
+  openURL: async () => true
 };
 
 export const View = () => null;

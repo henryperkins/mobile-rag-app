@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from "react";
-import { View, Animated, StyleSheet } from "react-native";
+import { View, Animated, StyleSheet, Platform } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
 export default function Shimmer({ height = 16, width = "100%", radius = 12 }: {
@@ -10,8 +10,8 @@ export default function Shimmer({ height = 16, width = "100%", radius = 12 }: {
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(translateX, { toValue: 200, duration: 1200, useNativeDriver: true }),
-        Animated.timing(translateX, { toValue: -200, duration: 0, useNativeDriver: true })
+        Animated.timing(translateX, { toValue: 200, duration: 1200, useNativeDriver: Platform.OS !== "web" }),
+        Animated.timing(translateX, { toValue: -200, duration: 0, useNativeDriver: Platform.OS !== "web" })
       ])
     );
     loop.start();

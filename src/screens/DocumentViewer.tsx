@@ -1,23 +1,27 @@
-import { View, Text, ScrollView, Pressable, Alert } from "react-native";
+import { View, Text, ScrollView, Pressable, Alert, Share } from "react-native";
 import React, { useMemo } from "react";
 import { chunksForDocument, getDocumentById } from "../utils/vectorDb";
 import { useRoute } from "@react-navigation/native";
 import * as Clipboard from "expo-clipboard";
 import * as Sharing from "expo-sharing";
+import * as FileSystem from "expo-file-system";
+import type { RouteProp } from "@react-navigation/native";
+import type { DocumentsStackParamList } from "../types/navigation";
+import type { ChunkRow } from "../types/document";
 
 export default function DocumentViewer() {
-  const route = useRoute<any>();
+  const route = useRoute<RouteProp<DocumentsStackParamList, "DocumentViewer">>();
   const { id, title } = route.params;
-  const chunks = useMemo(() => chunksForDocument(id), [id]);
+  const chunks = useMemo<ChunkRow[]>(() => chunksForDocument(id), [id]);
   const document = useMemo(() => getDocumentById(id), [id]);
 
-  const fullText = useMemo(() => chunks.map((c: any) => c.content).join("\n\n"), [chunks]);
+  const fullText = useMemo(() => chunks.map((c) => c.content).join("\n\n"), [chunks]);
 
   const handleCopy = async () => {
     try {
       await Clipboard.setStringAsync(fullText);
       Alert.alert("Success", "Document copied to clipboard");
-    } catch (error) {
+    } catch {
       Alert.alert("Error", "Failed to copy document");
     }
   };
@@ -26,15 +30,17 @@ export default function DocumentViewer() {
     try {
       const isAvailable = await Sharing.isAvailableAsync();
       if (isAvailable) {
-        await Sharing.shareAsync(fullText, {
-          title: document?.title || title,
-          mimeType: 'text/plain',
+        const safeName = (document?.title || title || "document").replace(/[^a-z0-9._-]+/gi, "_");
+        const fileUri = `${FileSystem.cacheDirectory ?? ""}${safeName}.txt`;
+        await FileSystem.writeAsStringAsync(fileUri, fullText, { encoding: FileSystem.EncodingType.UTF8 });
+        await Sharing.shareAsync(fileUri, {
+          mimeType: "text/plain",
+          dialogTitle: document?.title || title
         });
       } else {
-        await Clipboard.setStringAsync(fullText);
-        Alert.alert("Sharing Not Available", "Document copied to clipboard instead");
+        await Share.share({ message: fullText, title: document?.title || title });
       }
-    } catch (error) {
+    } catch {
       Alert.alert("Error", "Failed to share document");
     }
   };

@@ -41,9 +41,10 @@ export const useDocumentStore = create<DocState>()(
             size: asset.size ?? 0
           });
           get().refresh();
-        } catch (e: any) {
-          reportError(e, { where: "document.addFromPicker" });
-          set({ error: e?.message ?? "Failed to add document." });
+        } catch (err: unknown) {
+          reportError(err, { where: "document.addFromPicker" });
+          const message = err instanceof Error ? err.message : "Failed to add document.";
+          set({ error: message });
         } finally {
           set({ loading: false });
         }
@@ -59,18 +60,20 @@ export const useDocumentStore = create<DocState>()(
             size: asset.fileSize ?? 0
           });
           get().refresh();
-        } catch (e: any) {
-          reportError(e, { where: "document.addImageForOcr" });
-          set({ error: e?.message ?? "Failed to process image." });
+        } catch (err: unknown) {
+          reportError(err, { where: "document.addImageForOcr" });
+          const message = err instanceof Error ? err.message : "Failed to process image.";
+          set({ error: message });
         } finally {
           set({ loading: false });
         }
       },
       remove: async (id: string) => {
         try { deleteDocument(id); get().refresh(); }
-        catch (e: any) {
-          reportError(e, { where: "document.remove" });
-          set({ error: e?.message ?? "Delete failed." });
+        catch (err: unknown) {
+          reportError(err, { where: "document.remove" });
+          const message = err instanceof Error ? err.message : "Delete failed.";
+          set({ error: message });
         }
       },
       clearError: () => set({ error: undefined })

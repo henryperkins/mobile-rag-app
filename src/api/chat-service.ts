@@ -1,11 +1,10 @@
-import Constants from "expo-constants";
-import * as SecureStore from "expo-secure-store";
-import type { ChatMessage } from "../types/ai";
+import { getSecureItem } from "../utils/secureStore";
+import { getExpoExtraValue } from "../utils/expoConfig";
 
 async function getKey() {
-  return (await SecureStore.getItemAsync("OPENAI_API_KEY")) ??
-    (Constants?.expoConfig?.extra as any)?.OPENAI_API_KEY ??
-    "";
+  const stored = await getSecureItem("OPENAI_API_KEY");
+  if (stored) return stored;
+  return getExpoExtraValue("OPENAI_API_KEY") ?? "";
 }
 
 // Standard RAG chat

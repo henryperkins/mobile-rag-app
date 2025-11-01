@@ -3,9 +3,12 @@ export enum EncodingType {
   UTF8 = "utf8"
 }
 
-export async function readAsStringAsync(
-  _uri: string,
-  _options?: { encoding?: EncodingType }
-): Promise<string> {
+export const cacheDirectory = "/tmp/";
+
+export async function readAsStringAsync(): Promise<string> {
   return "";
+}
+
+export async function writeAsStringAsync(): Promise<void> {
+  // noop
 }

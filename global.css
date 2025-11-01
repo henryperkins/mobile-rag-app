@@ -1,0 +1,13 @@
+/* NativeWind + TailwindCSS v3 global styles */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom base styles for the app */
+@layer base {
+  /* Override any preflight styles that conflict with React Native */
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}

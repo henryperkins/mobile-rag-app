@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity } from "react-native";
-import * as SecureStore from "expo-secure-store";
+import { View, Text, TextInput, TouchableOpacity, Platform } from "react-native";
+import { getSecureItem, setSecureItem } from "../utils/secureStore";
 
 export default function SettingsScreen() {
   const [apiKey, setApiKey] = useState("");
@@ -12,14 +12,14 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     (async () => {
-      const k = await SecureStore.getItemAsync("OPENAI_API_KEY");
+      const k = await getSecureItem("OPENAI_API_KEY");
       if (k) setApiKey(k);
     })();
   }, []);
 
   async function save() {
     try {
-      await SecureStore.setItemAsync("OPENAI_API_KEY", apiKey.trim());
+      await setSecureItem("OPENAI_API_KEY", apiKey.trim());
       setSaved("ok");
       setTimeout(() => setSaved("idle"), 1500);
     } catch {
@@ -31,7 +31,7 @@ export default function SettingsScreen() {
   async function testKey() {
     setTestState("loading");
     setTestMsg("");
-    const key = apiKey.trim() || (await SecureStore.getItemAsync("OPENAI_API_KEY")) || "";
+    const key = apiKey.trim() || (await getSecureItem("OPENAI_API_KEY")) || "";
     if (!key) {
       setTestState("err");
       setTestMsg("No API key set.");
@@ -53,9 +53,10 @@ export default function SettingsScreen() {
       setTestMsg("");
       // let the checkmark bask in glory for a second
       setTimeout(() => setTestState("idle"), 1500);
-    } catch (e: any) {
+    } catch (err: unknown) {
       setTestState("err");
-      setTestMsg(e?.message ?? "Network error");
+      const message = err instanceof Error ? err.message : "Network error";
+      setTestMsg(message);
     }
   }
 
@@ -70,42 +71,92 @@ export default function SettingsScreen() {
 
       <View className="px-4 pt-2">
         <Text className="text-gray-300 mb-2">OpenAI API Key</Text>
-        <View className="flex-row items-center gap-2">
-          <TextInput
-            value={apiKey}
-            onChangeText={setApiKey}
-            placeholder="sk-... (never hardcode in code)"
-            placeholderTextColor="#94a3b8"
-            secureTextEntry={hidden}
-            autoCapitalize="none"
-            autoCorrect={false}
-            className="flex-1 text-white bg-white/10 rounded-xl px-3 py-2"
-          />
-          <TouchableOpacity
-            className="px-3 py-2 rounded-xl bg-white/10"
-            onPress={() => setHidden((h) => !h)}
+        {Platform.OS === "web" ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void save();
+            }}
+            style={{ display: "flex", flexDirection: "column" }}
           >
-            <Text className="text-white text-xs">{hidden ? "Show" : "Hide"}</Text>
-          </TouchableOpacity>
-        </View>
+            <View className="flex-row items-center gap-2">
+              <TextInput
+                value={apiKey}
+                onChangeText={setApiKey}
+                placeholder="sk-... (never hardcode in code)"
+                placeholderTextColor="#94a3b8"
+                secureTextEntry={hidden}
+                autoCapitalize="none"
+                autoCorrect={false}
+                className="flex-1 text-white bg-white/10 rounded-xl px-3 py-2"
+              />
+              <TouchableOpacity
+                className="px-3 py-2 rounded-xl bg-white/10"
+                onPress={() => setHidden((h) => !h)}
+              >
+                <Text className="text-white text-xs">{hidden ? "Show" : "Hide"}</Text>
+              </TouchableOpacity>
+            </View>
 
-        <View className="flex-row gap-2 mt-3">
-          <TouchableOpacity
-            onPress={save}
-            className="px-4 py-2 rounded-xl bg-accent/30 border border-accent/40"
-          >
-            <Text className="text-accent font-medium">Save</Text>
-          </TouchableOpacity>
+            <View className="flex-row gap-2 mt-3">
+              <TouchableOpacity
+                onPress={save}
+                className="px-4 py-2 rounded-xl bg-accent/30 border border-accent/40"
+              >
+                <Text className="text-accent font-medium">Save</Text>
+              </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={testKey}
-            className="px-4 py-2 rounded-xl bg-white/10 border border-white/15"
-          >
-            <Text className="text-white font-medium">
-              {testState === "loading" ? "Testing…" : "Test Key"}
-            </Text>
-          </TouchableOpacity>
-        </View>
+              <TouchableOpacity
+                onPress={testKey}
+                className="px-4 py-2 rounded-xl bg-white/10 border border-white/15"
+              >
+                <Text className="text-white font-medium">
+                  {testState === "loading" ? "Testing…" : "Test Key"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </form>
+        ) : (
+          <>
+            <View className="flex-row items-center gap-2">
+              <TextInput
+                value={apiKey}
+                onChangeText={setApiKey}
+                placeholder="sk-... (never hardcode in code)"
+                placeholderTextColor="#94a3b8"
+                secureTextEntry={hidden}
+                autoCapitalize="none"
+                autoCorrect={false}
+                className="flex-1 text-white bg-white/10 rounded-xl px-3 py-2"
+                onSubmitEditing={() => void save()}
+              />
+              <TouchableOpacity
+                className="px-3 py-2 rounded-xl bg-white/10"
+                onPress={() => setHidden((h) => !h)}
+              >
+                <Text className="text-white text-xs">{hidden ? "Show" : "Hide"}</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View className="flex-row gap-2 mt-3">
+              <TouchableOpacity
+                onPress={save}
+                className="px-4 py-2 rounded-xl bg-accent/30 border border-accent/40"
+              >
+                <Text className="text-accent font-medium">Save</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={testKey}
+                className="px-4 py-2 rounded-xl bg-white/10 border border-white/15"
+              >
+                <Text className="text-white font-medium">
+                  {testState === "loading" ? "Testing…" : "Test Key"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
 
         {saved === "ok" && <Text className="text-green-400 mt-2">Saved ✓</Text>}
         {saved === "err" && <Text className="text-red-400 mt-2">Failed to save. Try again.</Text>}

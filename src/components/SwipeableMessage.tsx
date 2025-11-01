@@ -1,8 +1,15 @@
 import React, { useRef } from "react";
-import { View, Animated, Text, TouchableOpacity } from "react-native";
+import { View, Animated, Text, TouchableOpacity, Platform } from "react-native";
 import { PanGestureHandler, State } from "react-native-gesture-handler";
 import MessageBubble from "./MessageBubble";
 import type { ChatMessage } from "../types/ai";
+
+type PanGestureHandlerStateChangeEvent = {
+  nativeEvent: {
+    state: State;
+    translationX: number;
+  };
+};
 
 interface SwipeableMessageProps {
   msg: ChatMessage;
@@ -15,10 +22,10 @@ export default function SwipeableMessage({ msg, onDelete }: SwipeableMessageProp
 
   const onGestureEvent = Animated.event(
     [{ nativeEvent: { translationX: translateX } }],
-    { useNativeDriver: true }
+    { useNativeDriver: Platform.OS !== "web" }
   );
 
-  const onHandlerStateChange = (event: any) => {
+  const onHandlerStateChange = (event: PanGestureHandlerStateChangeEvent) => {
     if (event.nativeEvent.state === State.END) {
       const { translationX } = event.nativeEvent;
 
@@ -27,7 +34,7 @@ export default function SwipeableMessage({ msg, onDelete }: SwipeableMessageProp
         Animated.timing(translateX, {
           toValue: -300,
           duration: 200,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== "web",
         }).start(() => {
           onDelete();
         });
@@ -35,7 +42,7 @@ export default function SwipeableMessage({ msg, onDelete }: SwipeableMessageProp
         // Snap back to position
         Animated.spring(translateX, {
           toValue: 0,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== "web",
         }).start();
       }
     }

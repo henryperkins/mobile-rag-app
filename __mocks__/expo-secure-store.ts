@@ -1,7 +1,7 @@
-export async function getItemAsync(_key: string): Promise<string | null> {
+export async function getItemAsync(): Promise<string | null> {
   return null;
 }
 
-export async function setItemAsync(_key: string, _value: string): Promise<void> {
+export async function setItemAsync(): Promise<void> {
   // noop
 }

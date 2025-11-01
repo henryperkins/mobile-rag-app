@@ -4,6 +4,12 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "jsx": "react-native"
-  }
+    "jsx": "react-native",
+    "types": ["nativewind/types"]
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "nativewind.d.ts"
+  ]
 }
