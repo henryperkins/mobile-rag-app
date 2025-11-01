@@ -1,9 +1,10 @@
 import * as FileSystem from "expo-file-system";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
+import { toByteArray } from "base64-js";
 import { ocrImageBase64 } from "../api/chat-service";
 import { embedText } from "../api/embeddings";
-import { insertChunk, insertDocument } from "./vectorDb";
+import { insertChunk, insertDocument, updateDocumentChunkCount } from "./vectorDb";
 import { randomUUID } from "./uuid";
 
 const EMBEDDING_DELAY_MS = 150; // base pacing between calls
@@ -76,19 +77,9 @@ async function loadPdf() {
   return pdfjs;
 }
 
-// Convert base64 -> Uint8Array
-function base64ToBytes(b64: string) {
-  const binary = global.atob ? global.atob(b64) :
-    Buffer.from(b64, "base64").toString("binary");
-  const len = binary.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
 export async function processPdfToText(uri: string): Promise<string> {
   const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
-  const bytes = base64ToBytes(base64);
+  const bytes = toByteArray(base64);
   const pdfjs = await loadPdf();
   const doc = await pdfjs.getDocument({ data: bytes }).promise;
   const out: string[] = [];
@@ -144,8 +135,6 @@ export async function ingestDocument(params: {
     count++;
   }
 
-  // Update chunkCount
-  // quick patch: SQLite lacks RETURNING in older builds, just overwrite
-  insertDocument({ id: docId, title, size, chunkCount: count, date: now, type });
+  updateDocumentChunkCount(docId, count);
   return { id: docId, chunkCount: count };
 }

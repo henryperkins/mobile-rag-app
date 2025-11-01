@@ -1,4 +1,4 @@
-import { View, Text } from "react-native";
+import { View, Text, Linking } from "react-native";
 import React from "react";
 import Markdown from "react-native-markdown-display";
 import type { ChatMessage } from "../types/ai";
@@ -69,8 +69,16 @@ export default function MessageBubble({ msg }: { msg: ChatMessage }) {
             mergeStyle={true}
             rules={{
               link: (node, children, parent, styles) => {
+                const url = node.attributes?.href ?? "";
                 return (
-                  <Text key={node.key} style={styles.link}>
+                  <Text
+                    key={node.key}
+                    style={styles.link}
+                    onPress={() => {
+                      if (!url) return;
+                      Linking.openURL(url).catch(() => undefined);
+                    }}
+                  >
                     {children}
                   </Text>
                 );

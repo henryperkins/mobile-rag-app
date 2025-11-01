@@ -34,6 +34,10 @@ export function insertDocument(doc: DocumentRow) {
   );
 }
 
+export function updateDocumentChunkCount(id: string, chunkCount: number) {
+  db.runSync("UPDATE documents SET chunkCount = ? WHERE id = ?", chunkCount, id);
+}
+
 export function insertChunk(id: string, documentId: string, content: string, embedding: number[]) {
   db.runSync(
     "INSERT OR REPLACE INTO chunks (id, documentId, content, embedding) VALUES (?,?,?,?)",
